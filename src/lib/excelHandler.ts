@@ -51,12 +51,23 @@ function isPaymentCol(h: string) {
 }
 
 function detectColumns(headers: string[]): ColumnMap {
+  // Try keyword matching first; fall back to positional (column V = index 21)
+  const sollCol =
+    find(headers, ["sollprovision", "soll", "provision", "erwartet", "umsatz", "expected", "plan"])
+    || (headers.length > 21 ? headers[21] : "");
+
+  // Payment columns: keyword match OR everything from column W (index 22) onwards, excluding the soll column
+  const byKeyword = headers.filter(isPaymentCol);
+  const zahlungspalten = byKeyword.length > 0
+    ? byKeyword
+    : headers.slice(22).filter(h => h !== sollCol);
+
   return {
-    kundennummer:  find(headers, ["kundennummer", "kundennr", "kunden-nr", "kundenid", "customer"]),
+    kundennummer:   find(headers, ["kundennummer", "kundennr", "kunden-nr", "kundenid", "customer"]),
     vertragsnummer: find(headers, ["vertragsnummer", "vertragsnr", "vertrags-nr", "policennr", "policennummer", "contract"]),
-    kundenname:    find(headers, ["name", "kundenname", "kunde", "nachname"]),
-    sollprovision: find(headers, ["sollprovision", "soll", "provision", "erwartet", "expected"]),
-    zahlungspalten: headers.filter(isPaymentCol),
+    kundenname:     find(headers, ["name", "kundenname", "kunde", "nachname"]),
+    sollprovision:  sollCol,
+    zahlungspalten,
   };
 }
 
