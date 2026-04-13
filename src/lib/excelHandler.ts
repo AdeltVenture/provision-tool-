@@ -94,11 +94,14 @@ export function parseExcel(file: File): Promise<ExcelData> {
         const columnMap = detectColumns(headers);
 
         const records: CustomerRecord[] = raw.map((row, idx) => {
-          const nachname = String(row[columnMap.kundenname] ?? "").trim();
-          const vorname  = columnMap.vorname ? String(row[columnMap.vorname] ?? "").trim() : "";
-          const fullName = vorname && nachname
-            ? `${vorname} ${nachname}`
-            : vorname || nachname;
+          const nachnameVal = String(row[columnMap.kundenname] ?? "").trim();
+          // Only use vorname if it maps to a DIFFERENT column than kundenname
+          const vornameVal = (columnMap.vorname && columnMap.vorname !== columnMap.kundenname)
+            ? String(row[columnMap.vorname] ?? "").trim()
+            : "";
+          const fullName = vornameVal && nachnameVal
+            ? `${vornameVal} ${nachnameVal}`
+            : nachnameVal || vornameVal;
 
           return {
           _idx:          idx,
