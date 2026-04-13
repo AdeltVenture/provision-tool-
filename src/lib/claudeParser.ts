@@ -53,6 +53,35 @@ Jedes Objekt hat genau diese Felder:
 }
 Fehlende Werte: "" oder 0. "betrag" ist immer eine Zahl, nie ein String.`;
 
+/**
+ * Rettet vollständige JSON-Objekte aus einer abgeschnittenen Array-Antwort.
+ * Nützlich wenn max_tokens die Antwort mittendrin abbricht.
+ */
+function recoverPartialJson(raw: string): CommissionEntry[] {
+  const results: CommissionEntry[] = [];
+  // Alle vollständigen {...} Objekte extrahieren
+  const re = /\{[^{}]*\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    try {
+      const obj = JSON.parse(m[0]) as CommissionEntry;
+      if (obj.vertragsnummer !== undefined || obj.betrag !== undefined) {
+        results.push({
+          vertragsnummer: String(obj.vertragsnummer ?? "").trim(),
+          kundennummer:   String(obj.kundennummer   ?? "").trim(),
+          kundenname:     String(obj.kundenname     ?? "").trim(),
+          betrag:         Number(obj.betrag)  || 0,
+          periode:        String(obj.periode  ?? "").trim(),
+          produkt:        String(obj.produkt  ?? "").trim(),
+        });
+      }
+    } catch {
+      // unvollständiges Objekt überspringen
+    }
+  }
+  return results;
+}
+
 export async function parseCommissionPdf(
   pdfText: string,
   onToken: (delta: string) => void
@@ -71,7 +100,7 @@ export async function parseCommissionPdf(
 
   const stream = await client.messages.stream({
     model:      getModel(),
-    max_tokens: 4096,
+    max_tokens: 16384,   // erhöht: große PDFs mit vielen Einträgen brauchen mehr Platz
     system:     SYSTEM,
     messages:   [{ role: "user", content: `Provisionsabrechnung:\n\n${truncated}` }],
   });
@@ -86,8 +115,15 @@ export async function parseCommissionPdf(
     }
   }
 
-  const match = raw.match(/\[[\s\S]*\]/);
+  // Vollständiges JSON-Array suchen
+  let match = raw.match(/\[[\s\S]*\]/);
+
+  // Fallback: Antwort wurde abgeschnitten → alle vollständigen Objekte retten
   if (!match) {
+    const recovered = recoverPartialJson(raw);
+    if (recovered.length > 0) {
+      return recovered;
+    }
     throw new Error("Keine strukturierten Einträge erkannt.\nRohausgabe:\n" + raw.slice(0, 400));
   }
 
