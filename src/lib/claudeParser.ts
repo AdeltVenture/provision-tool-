@@ -91,16 +91,17 @@ export async function parseCommissionPdf(
 
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
+  // 21-seitige PDFs können 80.000+ Zeichen haben – großzügiges Limit setzen
   const truncated =
-    pdfText.length > 14_000
-      ? pdfText.slice(0, 14_000) + "\n[… Text gekürzt]"
+    pdfText.length > 90_000
+      ? pdfText.slice(0, 90_000) + "\n[… Text gekürzt]"
       : pdfText;
 
   let raw = "";
 
   const stream = await client.messages.stream({
     model:      getModel(),
-    max_tokens: 16384,   // erhöht: große PDFs mit vielen Einträgen brauchen mehr Platz
+    max_tokens: 32000,   // für PDFs mit mehreren hundert Einträgen
     system:     SYSTEM,
     messages:   [{ role: "user", content: `Provisionsabrechnung:\n\n${truncated}` }],
   });
