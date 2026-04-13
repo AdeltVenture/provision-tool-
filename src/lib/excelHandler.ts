@@ -1,6 +1,10 @@
 /**
  * excelHandler.ts
  * Reads the customer Excel database and writes payment columns back.
+ * Column layout (0-indexed):
+ *   M = index 12  → Zahlweise
+ *   T = index 19  → Soll-Provision
+ *   U = index 20+ → Payment history / matching results
  */
 
 import * as XLSX from "xlsx";
@@ -10,28 +14,30 @@ import * as XLSX from "xlsx";
 export interface ColumnMap {
   kundennummer:   string;
   vertragsnummer: string;
-  kundenname:     string;   // Vollständiger Name ODER nur Nachname
-  vorname:        string;   // Vorname (separate Spalte, falls vorhanden)
+  kundenname:     string;
+  vorname:        string;
+  zahlweise:      string;
   sollprovision:  string;
   zahlungspalten: string[];
 }
 
 export interface CustomerRecord {
-  _idx:          number;
-  kundennummer:  string;
+  _idx:           number;
+  kundennummer:   string;
   vertragsnummer: string;
-  kundenname:    string;
-  sollprovision: number;
-  zahlungen:     Record<string, number>;
-  _original:     Record<string, unknown>;
+  kundenname:     string;
+  zahlweise:      string;
+  sollprovision:  number;
+  zahlungen:      Record<string, number>;
+  _original:      Record<string, unknown>;
 }
 
 export interface ExcelData {
-  records:    CustomerRecord[];
-  columnMap:  ColumnMap;
-  headers:    string[];
-  workbook:   XLSX.WorkBook;
-  sheetName:  string;
+  records:   CustomerRecord[];
+  columnMap: ColumnMap;
+  headers:   string[];
+  workbook:  XLSX.WorkBook;
+  sheetName: string;
 }
 
 // ─── Column detection ─────────────────────────────────────────────────────────
@@ -52,22 +58,39 @@ function isPaymentCol(h: string) {
 }
 
 function detectColumns(headers: string[]): ColumnMap {
-  // Try keyword matching first; fall back to positional (column V = index 21)
+  // Soll-Provision: keyword → positional fallback column T (index 19)
   const sollCol =
-    find(headers, ["sollprovision", "soll", "provision", "erwartet", "umsatz", "expected", "plan"])
-    || (headers.length > 21 ? headers[21] : "");
+    find(headers, ["sollprovision", "soll", "umsatz in eur", "umsatz", "provision", "erwartet", "expected", "plan"])
+    || (headers.length > 19 ? headers[19] : "");
 
-  // Payment columns: keyword match OR everything from column W (index 22) onwards, excluding the soll column
+  // Zahlweise: keyword → positional fallback column M (index 12)
+  const zahlweiseCol =
+    find(headers, ["zahlweise", "zahlungsweise", "zahlungsart", "zahlperiode", "payment freq", "frequenz"])
+    || (headers.length > 12 ? headers[12] : "");
+
+  // Payment history columns: keyword → from column U (index 20) onwards
   const byKeyword = headers.filter(isPaymentCol);
   const zahlungspalten = byKeyword.length > 0
     ? byKeyword
-    : headers.slice(22).filter(h => h !== sollCol);
+    : headers.slice(20).filter(h => h !== sollCol && h !== zahlweiseCol);
+
+  // Name detection: avoid matching "Vorname" as the nachname column
+  const vornameCol   = find(headers, ["vorname", "firstname", "rufname"]);
+  const nachnameKeys = ["kundenname", "nachname", "familienname", "lastname", "surname"];
+  // Only use generic "name" keyword if nothing more specific was found
+  let nachnameCol = find(headers, nachnameKeys);
+  if (!nachnameCol) {
+    nachnameCol = headers.find(
+      (h) => norm(h).includes("name") && h !== vornameCol
+    ) ?? "";
+  }
 
   return {
     kundennummer:   find(headers, ["kundennummer", "kundennr", "kunden-nr", "kundenid", "customer"]),
     vertragsnummer: find(headers, ["vertragsnummer", "vertragsnr", "vertrags-nr", "policennr", "policennummer", "contract"]),
-    kundenname:     find(headers, ["kundenname", "nachname", "familienname", "lastname", "surname", "name"]),
-    vorname:        find(headers, ["vorname", "firstname", "first name", "rufname"]),
+    kundenname:     nachnameCol,
+    vorname:        vornameCol,
+    zahlweise:      zahlweiseCol,
     sollprovision:  sollCol,
     zahlungspalten,
   };
@@ -95,7 +118,7 @@ export function parseExcel(file: File): Promise<ExcelData> {
 
         const records: CustomerRecord[] = raw.map((row, idx) => {
           const nachnameVal = String(row[columnMap.kundenname] ?? "").trim();
-          // Only use vorname if it maps to a DIFFERENT column than kundenname
+          // Combine vorname + nachname only if they are different columns
           const vornameVal = (columnMap.vorname && columnMap.vorname !== columnMap.kundenname)
             ? String(row[columnMap.vorname] ?? "").trim()
             : "";
@@ -104,17 +127,18 @@ export function parseExcel(file: File): Promise<ExcelData> {
             : nachnameVal || vornameVal;
 
           return {
-          _idx:          idx,
-          kundennummer:  String(row[columnMap.kundennummer]  ?? "").trim(),
-          vertragsnummer: String(row[columnMap.vertragsnummer] ?? "").trim(),
-          kundenname:    fullName,
-          sollprovision: Number(row[columnMap.sollprovision]) || 0,
-          zahlungen:     Object.fromEntries(
-            columnMap.zahlungspalten
-              .map((k) => [k, Number(row[k]) || 0] as [string, number])
-              .filter(([, v]) => v > 0)
-          ),
-          _original: row,
+            _idx:           idx,
+            kundennummer:   String(row[columnMap.kundennummer]   ?? "").trim(),
+            vertragsnummer: String(row[columnMap.vertragsnummer] ?? "").trim(),
+            kundenname:     fullName,
+            zahlweise:      String(row[columnMap.zahlweise]      ?? "").trim(),
+            sollprovision:  Number(row[columnMap.sollprovision])  || 0,
+            zahlungen:      Object.fromEntries(
+              columnMap.zahlungspalten
+                .map((k) => [k, Number(row[k]) || 0] as [string, number])
+                .filter(([, v]) => v > 0)
+            ),
+            _original: row,
           };
         });
 
@@ -131,17 +155,13 @@ export function parseExcel(file: File): Promise<ExcelData> {
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-/**
- * Adds a new column `period` to the workbook, fills in matched payments,
- * and triggers a browser download.
- */
 export function exportWithPayments(
   data: ExcelData,
   period: string,
   payments: Map<number, number>
 ): void {
-  const sheet = data.workbook.Sheets[data.sheetName];
-  const raw   = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  const sheet  = data.workbook.Sheets[data.sheetName];
+  const raw    = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
 
   const updated = raw.map((row, i) => ({
     ...row,
