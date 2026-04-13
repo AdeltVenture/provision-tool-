@@ -122,7 +122,7 @@ export default function SettingsModal({ onClose }: Props) {
           disabled={!key.startsWith("sk-")}
           className="w-full py-2.5 rounded-xl font-semibold text-sm transition-colors"
           style={{
-            background: saved ? "#16a34a" : key.startsWith("sk-") ? "#1a1f3a" : "#e2e8f0",
+            background: saved ? "#16a34a" : key.startsWith("sk-") ? "#2d2d2d" : "#e2e8f0",
             color:      saved || key.startsWith("sk-") ? "white" : "#94a3b8",
           }}
         >
