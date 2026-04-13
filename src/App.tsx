@@ -18,26 +18,21 @@ import { parseExcel, exportWithPayments, type ExcelData }         from "./lib/ex
 import { reconcile, summarise, type MatchResult, type MatchStatus } from "./lib/matcher";
 
 // ─── LOYAGO CI ────────────────────────────────────────────────────────────────
+// Primärfarbe: #cbdafb (Hellblau), Schrift: #2d2d2d (fast Schwarz)
 
 const C = {
-  bg:          "#f4f8fe",
-  dark:        "#1a1f3a",
-  accent:      "#4a6da8",
-  accentLight: "#eaeff8",
-  accentBorder:"#c7d9f0",
-  muted:       "#94a3b8",
+  bg:          "#eef3fd",          // Seitenhintegrund (etwas dunkler als CI-Blau)
+  ci:          "#cbdafb",          // LOYAGO Hauptfarbe
+  ciBorder:    "#a8c4f8",          // CI-Blau etwas dunkler für Borders
+  ciDark:      "#2d2d2d",          // Textfarbe aus Logo
+  muted:       "#6b7280",
+  mutedLight:  "#94a3b8",
   card:        "white",
   border:      "#e2e8f0",
+  success:     "#16a34a",
+  warning:     "#d97706",
+  danger:      "#dc2626",
 };
-
-// LOYAGO-Logo (verkleinertes SVG aus public/favicon.svg)
-function LoyagoLogo({ size = 28 }: { size?: number }) {
-  return (
-    <svg width={size} height={size * 46 / 48} viewBox="0 0 48 46" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z"/>
-    </svg>
-  );
-}
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
 
@@ -53,19 +48,19 @@ const STATUS: Record<
   { label: string; color: string; bg: string; border: string; Icon: typeof CheckCircle2 }
 > = {
   exact: {
-    label: "Abgeglichen", color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0",
+    label: "Abgeglichen", color: C.success,  bg: "#f0fdf4", border: "#bbf7d0",
     Icon: CheckCircle2,
   },
   partial: {
-    label: "Kundennr.",   color: "#d97706", bg: "#fffbeb", border: "#fde68a",
+    label: "Kundennr.",   color: C.warning,  bg: "#fffbeb", border: "#fde68a",
     Icon: AlertTriangle,
   },
   unmatched_pdf: {
-    label: "Unbekannt",   color: C.accent,  bg: C.accentLight, border: C.accentBorder,
+    label: "Unbekannt",   color: C.ciDark,   bg: C.ci,      border: C.ciBorder,
     Icon: Info,
   },
   unmatched_excel: {
-    label: "Ausstehend",  color: "#dc2626", bg: "#fef2f2", border: "#fecaca",
+    label: "Ausstehend",  color: C.danger,   bg: "#fef2f2", border: "#fecaca",
     Icon: XCircle,
   },
 };
@@ -141,26 +136,39 @@ export default function App() {
     : [];
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg }}>
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "-apple-system, 'Helvetica Neue', Arial, sans-serif" }}>
 
       {/* ── Header ── */}
       <header style={{
-        background: C.dark,
-        boxShadow: "0 2px 12px rgba(26,31,58,0.18)",
+        background: C.ci,
+        borderBottom: `1px solid ${C.ciBorder}`,
         position: "sticky", top: 0, zIndex: 30,
       }}>
-        <div className="flex items-center justify-between px-6 py-3 mx-auto" style={{ maxWidth: 1100 }}>
+        <div className="flex items-center justify-between px-6 mx-auto" style={{ maxWidth: 1100, height: 56 }}>
           {/* Wordmark */}
-          <div className="flex items-center gap-3">
-            <LoyagoLogo size={30} />
-            <div>
-              <span className="font-black tracking-tight" style={{ fontSize: 20, color: "white", letterSpacing: "-0.5px" }}>
-                LOYAGO
-              </span>
-              <span className="ml-2 text-xs font-semibold uppercase tracking-widest" style={{ color: C.accent }}>
-                Provisionscontrolling
-              </span>
-            </div>
+          <div className="flex items-center gap-4">
+            {/* LOYAGO Wordmark – nachgebaut aus Logo */}
+            <span style={{
+              fontFamily: "'Arial Black', 'Helvetica Neue', Arial, sans-serif",
+              fontWeight: 900,
+              fontSize: 22,
+              letterSpacing: "-0.01em",
+              color: C.ciDark,
+              lineHeight: 1,
+            }}>
+              LOYAGO
+            </span>
+            {/* Separator */}
+            <span style={{ width: 1, height: 20, background: C.ciBorder, display: "inline-block" }} />
+            {/* Sub-title */}
+            <span style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: C.muted,
+              letterSpacing: "0.01em",
+            }}>
+              Provisionscontrolling
+            </span>
           </div>
 
           {/* Actions */}
@@ -169,7 +177,7 @@ export default function App() {
               <button
                 onClick={handleExport}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold"
-                style={{ background: C.accent, color: "white" }}
+                style={{ background: C.ciDark, color: C.ci }}
               >
                 <Download size={14} />
                 Excel exportieren
@@ -178,10 +186,10 @@ export default function App() {
             <button
               onClick={() => setShowSettings(true)}
               className="p-2 rounded-xl"
-              style={{ background: "rgba(255,255,255,0.1)" }}
+              style={{ background: "rgba(45,45,45,0.08)" }}
               title="Einstellungen"
             >
-              <Settings size={18} color="rgba(255,255,255,0.7)" />
+              <Settings size={18} color={C.muted} />
             </button>
           </div>
         </div>
@@ -291,8 +299,8 @@ export default function App() {
                 <button key={key} onClick={() => setFilter(key)}
                   className="px-3 py-1.5 rounded-xl text-sm font-medium"
                   style={{
-                    background: filter === key ? C.dark : C.card,
-                    color:      filter === key ? "white" : "#64748b",
+                    background: filter === key ? C.ciDark : C.card,
+                    color:      filter === key ? C.ci     : "#64748b",
                     boxShadow:  "0 1px 3px rgba(0,0,0,0.06)",
                   }}>
                   {label}
@@ -330,10 +338,12 @@ export default function App() {
         {!results && pdfStatus === "idle" && xlsxStatus === "idle" && (
           <div className="text-center py-16">
             <div className="inline-flex items-center justify-center rounded-2xl mb-5"
-              style={{ width: 72, height: 72, background: C.accentLight }}>
-              <LoyagoLogo size={36} />
+              style={{ width: 72, height: 72, background: C.ci }}>
+              <span style={{ fontFamily: "'Arial Black', Arial, sans-serif", fontWeight: 900, fontSize: 18, color: C.ciDark, letterSpacing: "-0.01em" }}>
+                LOYAGO
+              </span>
             </div>
-            <p className="text-lg font-bold mb-2" style={{ color: C.dark }}>
+            <p className="text-lg font-bold mb-2" style={{ color: C.ciDark }}>
               Provisionsabgleich starten
             </p>
             <p className="text-sm max-w-sm mx-auto" style={{ color: C.muted, lineHeight: 1.7 }}>
@@ -343,7 +353,7 @@ export default function App() {
             {!getApiKey() && (
               <button onClick={() => setShowSettings(true)}
                 className="mt-5 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
-                style={{ background: C.accent, color: "white" }}>
+                style={{ background: C.ciDark, color: C.ci }}>
                 <Settings size={15} />
                 API-Key einrichten
               </button>
