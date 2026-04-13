@@ -34,7 +34,7 @@ export default function DropZone({
   const borderColor =
     status === "done"  ? "#22c55e" :
     status === "error" ? "#ef4444" :
-    over               ? "#4a6da8" : "#cbd5e1";
+    over               ? "#2d2d2d" : "#cbd5e1";
 
   const statusColor =
     status === "done"  ? "#16a34a" :
@@ -74,11 +74,11 @@ export default function DropZone({
       <div className="flex items-start gap-3">
         <div
           className="rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ width: 44, height: 44, background: "#eaeff8" }}
+          style={{ width: 44, height: 44, background: "#cbdafb" }}
         >
           <StatusIcon
             size={20}
-            color="#4a6da8"
+            color="#2d2d2d"
             className={status === "loading" ? "animate-spin" : ""}
           />
         </div>
