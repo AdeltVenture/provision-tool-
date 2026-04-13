@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Settings, TrendingUp, TrendingDown, Minus,
   CheckCircle2, AlertTriangle, XCircle, Info, Download, ChevronDown,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, BarChart3,
 } from "lucide-react";
 
 import SettingsModal from "./components/SettingsModal";
@@ -218,6 +218,26 @@ export default function App() {
           <pre style={{ marginBottom: 24, padding: 16, borderRadius: 12, background: "white", color: "#475569", fontFamily: "monospace", fontSize: 11, maxHeight: 200, overflow: "auto", border: "1px solid #e2e8f0" }}>
             {pdfText}
           </pre>
+        )}
+
+        {/* ── Empty state (nichts geladen) ── */}
+        {pdfStatus === "idle" && xlsxStatus === "idle" && (
+          <div style={{ textAlign: "center", padding: "56px 0 40px" }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: 22,
+              background: "#cbdafb",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              marginBottom: 20,
+            }}>
+              <BarChart3 size={34} color="#2d2d2d" strokeWidth={2} />
+            </div>
+            <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700, color: "#1e1e1e" }}>
+              Provisionsabgleich starten
+            </h3>
+            <p style={{ margin: 0, fontSize: 14, color: "#9ca3af", maxWidth: 360, marginInline: "auto" }}>
+              Lade die monatliche PDF-Abrechnung und deine Excel-Kundendatenbank hoch. Der Abgleich startet automatisch.
+            </p>
+          </div>
         )}
 
         {/* ── Hinweis wenn nur eine Datei geladen ── */}
