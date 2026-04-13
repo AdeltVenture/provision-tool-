@@ -133,7 +133,7 @@ export default function App() {
             </span>
             <div style={{ width: 1, height: 22, background: "#a0b8f0" }} />
             <span style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", letterSpacing: "0.3px" }}>
-              Provisionscontrolling
+              Provisionscontrolling BGV-Bestand
             </span>
           </div>
 
