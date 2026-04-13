@@ -1,0 +1,104 @@
+/**
+ * claudeParser.ts
+ * Calls the Anthropic API directly from the browser to parse raw PDF text
+ * into structured commission entries. Requires an API key stored in localStorage.
+ */
+
+import Anthropic from "@anthropic-ai/sdk";
+
+export const API_KEY_STORAGE = "provision_anthropic_key";
+export const MODEL_STORAGE   = "provision_model";
+export const DEFAULT_MODEL   = "claude-sonnet-4-6";
+
+export function getApiKey(): string {
+  return localStorage.getItem(API_KEY_STORAGE) ?? "";
+}
+
+export function saveApiKey(key: string) {
+  localStorage.setItem(API_KEY_STORAGE, key.trim());
+}
+
+export function getModel(): string {
+  return localStorage.getItem(MODEL_STORAGE) ?? DEFAULT_MODEL;
+}
+
+export function saveModel(model: string) {
+  localStorage.setItem(MODEL_STORAGE, model);
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface CommissionEntry {
+  vertragsnummer: string;
+  kundennummer:   string;
+  kundenname:     string;
+  betrag:         number;   // Provisionsbetrag in EUR
+  periode:        string;   // "YYYY-MM"
+  produkt:        string;
+}
+
+// ─── Parser ───────────────────────────────────────────────────────────────────
+
+const SYSTEM = `Du bist Spezialist für Versicherungs-Provisionsabrechnungen.
+Analysiere den Text und extrahiere ALLE Provisionseinträge.
+Antworte ausschließlich mit einem validen JSON-Array, ohne Erklärung oder Codeblock.
+Jedes Objekt hat genau diese Felder:
+{
+  "vertragsnummer": "string",
+  "kundennummer":   "string",
+  "kundenname":     "string",
+  "betrag":         number,
+  "periode":        "YYYY-MM",
+  "produkt":        "string"
+}
+Fehlende Werte: "" oder 0. "betrag" ist immer eine Zahl, nie ein String.`;
+
+export async function parseCommissionPdf(
+  pdfText: string,
+  onToken: (delta: string) => void
+): Promise<CommissionEntry[]> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Kein Anthropic API-Key konfiguriert.");
+
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+  const truncated =
+    pdfText.length > 14_000
+      ? pdfText.slice(0, 14_000) + "\n[… Text gekürzt]"
+      : pdfText;
+
+  let raw = "";
+
+  const stream = await client.messages.stream({
+    model:      getModel(),
+    max_tokens: 4096,
+    system:     SYSTEM,
+    messages:   [{ role: "user", content: `Provisionsabrechnung:\n\n${truncated}` }],
+  });
+
+  for await (const event of stream) {
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
+      raw += event.delta.text;
+      onToken(event.delta.text);
+    }
+  }
+
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (!match) {
+    throw new Error("Keine strukturierten Einträge erkannt.\nRohausgabe:\n" + raw.slice(0, 400));
+  }
+
+  const entries = JSON.parse(match[0]) as CommissionEntry[];
+
+  return entries.map((e) => ({
+    vertragsnummer: String(e.vertragsnummer ?? "").trim(),
+    kundennummer:   String(e.kundennummer   ?? "").trim(),
+    kundenname:     String(e.kundenname     ?? "").trim(),
+    betrag:         Number(e.betrag)  || 0,
+    periode:        String(e.periode  ?? "").trim(),
+    produkt:        String(e.produkt  ?? "").trim(),
+  }));
+}
