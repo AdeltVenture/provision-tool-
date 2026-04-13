@@ -8,10 +8,11 @@ import * as XLSX from "xlsx";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ColumnMap {
-  kundennummer:  string;
+  kundennummer:   string;
   vertragsnummer: string;
-  kundenname:    string;
-  sollprovision: string;
+  kundenname:     string;   // Vollständiger Name ODER nur Nachname
+  vorname:        string;   // Vorname (separate Spalte, falls vorhanden)
+  sollprovision:  string;
   zahlungspalten: string[];
 }
 
@@ -65,7 +66,8 @@ function detectColumns(headers: string[]): ColumnMap {
   return {
     kundennummer:   find(headers, ["kundennummer", "kundennr", "kunden-nr", "kundenid", "customer"]),
     vertragsnummer: find(headers, ["vertragsnummer", "vertragsnr", "vertrags-nr", "policennr", "policennummer", "contract"]),
-    kundenname:     find(headers, ["name", "kundenname", "kunde", "nachname"]),
+    kundenname:     find(headers, ["kundenname", "nachname", "familienname", "lastname", "surname", "name"]),
+    vorname:        find(headers, ["vorname", "firstname", "first name", "rufname"]),
     sollprovision:  sollCol,
     zahlungspalten,
   };
@@ -91,11 +93,18 @@ export function parseExcel(file: File): Promise<ExcelData> {
         const headers   = Object.keys(raw[0]);
         const columnMap = detectColumns(headers);
 
-        const records: CustomerRecord[] = raw.map((row, idx) => ({
+        const records: CustomerRecord[] = raw.map((row, idx) => {
+          const nachname = String(row[columnMap.kundenname] ?? "").trim();
+          const vorname  = columnMap.vorname ? String(row[columnMap.vorname] ?? "").trim() : "";
+          const fullName = vorname && nachname
+            ? `${vorname} ${nachname}`
+            : vorname || nachname;
+
+          return {
           _idx:          idx,
           kundennummer:  String(row[columnMap.kundennummer]  ?? "").trim(),
           vertragsnummer: String(row[columnMap.vertragsnummer] ?? "").trim(),
-          kundenname:    String(row[columnMap.kundenname]    ?? "").trim(),
+          kundenname:    fullName,
           sollprovision: Number(row[columnMap.sollprovision]) || 0,
           zahlungen:     Object.fromEntries(
             columnMap.zahlungspalten
@@ -103,7 +112,8 @@ export function parseExcel(file: File): Promise<ExcelData> {
               .filter(([, v]) => v > 0)
           ),
           _original: row,
-        }));
+          };
+        });
 
         resolve({ records, columnMap, headers, workbook: wb, sheetName: name });
       } catch (err) {
