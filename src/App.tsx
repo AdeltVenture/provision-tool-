@@ -443,9 +443,16 @@ function ResultRow({ result }: { result: MatchResult }) {
     >
       {/* Status + flag */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: ms.bg, color: ms.color, border: `1px solid ${ms.border}`, width: "fit-content" }}>
-          {ms.label}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: ms.bg, color: ms.color, border: `1px solid ${ms.border}`, width: "fit-content" }}>
+            {ms.label}
+          </span>
+          {result.positionCount > 1 && (
+            <span title={`${result.positionCount} Positionen summiert`} style={{ padding: "2px 6px", borderRadius: 5, fontSize: 10, fontWeight: 700, background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0" }}>
+              {result.positionCount} Pos.
+            </span>
+          )}
+        </div>
         {flg && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: flg.bg, color: flg.color, width: "fit-content" }}>
             {flg.icon} {flg.label}
