@@ -12,9 +12,9 @@ import {
 } from "../lib/claudeParser";
 
 const MODELS = [
-  { id: "claude-opus-4-6",              label: "Claude Opus 4.6   (genaueste Analyse)" },
-  { id: "claude-sonnet-4-6",            label: "Claude Sonnet 4.6 (empfohlen)" },
-  { id: "claude-haiku-4-5-20251001",   label: "Claude Haiku 4.5  (schnellste / günstigste)" },
+  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5  ⚡ schnellste / günstigste (empfohlen)" },
+  { id: "claude-sonnet-4-6",         label: "Claude Sonnet 4.6  — höhere Genauigkeit, langsamer" },
+  { id: "claude-opus-4-6",           label: "Claude Opus 4.6    — maximale Genauigkeit, sehr langsam" },
 ];
 
 interface Props {
