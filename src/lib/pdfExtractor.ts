@@ -4,9 +4,12 @@
  */
 
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
-import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-GlobalWorkerOptions.workerSrc = workerSrc;
+// new URL() lässt Vite die Worker-Datei korrekt auflösen
+GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).href;
 
 export async function extractPdfText(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
