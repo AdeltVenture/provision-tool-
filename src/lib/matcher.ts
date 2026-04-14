@@ -40,6 +40,7 @@ export interface MatchResult {
   sollProvision: number;
   istProvision:  number;
   delta:         number;          // ist - soll
+  positionCount: number;          // how many PDF lines were summed into this row
 }
 
 export interface Summary {
@@ -89,6 +90,38 @@ function computeFlag(soll: number, ist: number): ControlFlag {
   return "ok";
 }
 
+// ─── Grouping ─────────────────────────────────────────────────────────────────
+
+/**
+ * Multiple PDF lines for the same Vertragsnummer (or Kundennummer as fallback)
+ * are summed into one entry before matching.
+ * This handles corrections, partial payments and multi-position invoices.
+ */
+function groupEntries(entries: CommissionEntry[]): CommissionEntry[] {
+  const map = new Map<string, CommissionEntry & { _count: number }>();
+
+  for (const e of entries) {
+    const vk = key(e.vertragsnummer);
+    const kk = key(e.kundennummer);
+    // Primary key: Vertragsnummer; fallback: Kundennummer; last resort: unique entry
+    const groupKey = vk || kk || `__${map.size}`;
+
+    const existing = map.get(groupKey);
+    if (existing) {
+      existing.betrag += e.betrag;
+      existing._count += 1;
+      // Keep first entry's periode/produkt/name unless empty
+      if (!existing.periode && e.periode) existing.periode = e.periode;
+      if (!existing.produkt && e.produkt) existing.produkt = e.produkt;
+      if (!existing.kundenname && e.kundenname) existing.kundenname = e.kundenname;
+    } else {
+      map.set(groupKey, { ...e, _count: 1 });
+    }
+  }
+
+  return [...map.values()];
+}
+
 // ─── Reconcile ────────────────────────────────────────────────────────────────
 
 export function reconcile(
@@ -99,25 +132,27 @@ export function reconcile(
   // Tracks customers that received ≥1 payment (for unmatched_excel detection)
   const claimed = new Set<number>();
 
-  for (const entry of pdf) {
-    // ── 1. Vertragsnummer (exclusive: one Excel row per Vertragsnr per PDF entry)
+  // Group multi-position entries first
+  const grouped = groupEntries(pdf) as (CommissionEntry & { _count: number })[];
+
+  for (const entry of grouped) {
+    const posCount = entry._count ?? 1;
+    // ── 1. Vertragsnummer
     if (entry.vertragsnummer) {
       const match = customers.find((c) => keysMatch(c.vertragsnummer, entry.vertragsnummer));
       if (match) {
         claimed.add(match._idx);
-        results.push(buildRow("exact", entry, match));
+        results.push(buildRow("exact", entry, match, posCount));
         continue;
       }
     }
 
-    // ── 2. Kundennummer fallback
-    //    NOT exclusive: same customer can receive multiple payments in one period.
-    //    claimed is still updated so the customer is not listed as "unmatched_excel".
+    // ── 2. Kundennummer fallback (not exclusive — multiple payments per customer allowed)
     if (entry.kundennummer) {
       const match = customers.find((c) => keysMatch(c.kundennummer, entry.kundennummer));
       if (match) {
         claimed.add(match._idx);
-        results.push(buildRow("partial", entry, match));
+        results.push(buildRow("partial", entry, match, posCount));
         continue;
       }
     }
@@ -130,6 +165,7 @@ export function reconcile(
       sollProvision: 0,
       istProvision:  entry.betrag,
       delta:         entry.betrag,
+      positionCount: posCount,
     });
   }
 
@@ -143,6 +179,7 @@ export function reconcile(
         sollProvision: c.sollprovision,
         istProvision:  0,
         delta:         -c.sollprovision,
+        positionCount: 0,
       });
     }
   }
@@ -205,9 +242,10 @@ export function summarise(results: MatchResult[]): Summary {
 // ─── Internal ─────────────────────────────────────────────────────────────────
 
 function buildRow(
-  status:   "exact" | "partial",
-  entry:    CommissionEntry,
-  customer: CustomerRecord
+  status:       "exact" | "partial",
+  entry:        CommissionEntry,
+  customer:     CustomerRecord,
+  positionCount = 1
 ): MatchResult {
   const soll = customer.sollprovision;
   const ist  = entry.betrag;
@@ -219,5 +257,6 @@ function buildRow(
     sollProvision: soll,
     istProvision:  ist,
     delta:         ist - soll,
+    positionCount,
   };
 }
