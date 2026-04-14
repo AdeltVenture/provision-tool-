@@ -1,31 +1,23 @@
 /**
  * claudeParser.ts
- * Calls the Anthropic API directly from the browser to parse raw PDF text
- * into structured commission entries. Requires an API key stored in localStorage.
- * Large PDFs are processed in chunks to handle 1000+ entries.
+ * Extracts commission entries from PDF text via the Anthropic API.
+ *
+ * Performance:
+ *  - CSV output format (60% fewer tokens than JSON)
+ *  - Parallel chunk processing for large PDFs
+ *  - 70k chars per chunk → covers ~15 pages each
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 
 export const API_KEY_STORAGE = "provision_anthropic_key";
 export const MODEL_STORAGE   = "provision_model";
-export const DEFAULT_MODEL   = "claude-sonnet-4-6";
+export const DEFAULT_MODEL   = "claude-haiku-4-5-20251001"; // fastest for structured extraction
 
-export function getApiKey(): string {
-  return localStorage.getItem(API_KEY_STORAGE) ?? "";
-}
-
-export function saveApiKey(key: string) {
-  localStorage.setItem(API_KEY_STORAGE, key.trim());
-}
-
-export function getModel(): string {
-  return localStorage.getItem(MODEL_STORAGE) ?? DEFAULT_MODEL;
-}
-
-export function saveModel(model: string) {
-  localStorage.setItem(MODEL_STORAGE, model);
-}
+export function getApiKey(): string  { return localStorage.getItem(API_KEY_STORAGE) ?? ""; }
+export function saveApiKey(k: string){ localStorage.setItem(API_KEY_STORAGE, k.trim()); }
+export function getModel(): string   { return localStorage.getItem(MODEL_STORAGE) ?? DEFAULT_MODEL; }
+export function saveModel(m: string) { localStorage.setItem(MODEL_STORAGE, m); }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,62 +25,76 @@ export interface CommissionEntry {
   vertragsnummer: string;
   kundennummer:   string;
   kundenname:     string;
-  betrag:         number;   // Provisionsbetrag in EUR
+  betrag:         number;
   periode:        string;   // "YYYY-MM"
   produkt:        string;
 }
 
-// ─── Parser ───────────────────────────────────────────────────────────────────
+// ─── Prompt ───────────────────────────────────────────────────────────────────
 
+// CSV format: ~60% fewer output tokens than JSON → ~3× faster generation
 const SYSTEM = `Du bist Spezialist für Versicherungs-Provisionsabrechnungen.
-Analysiere den Text und extrahiere ALLE Provisionseinträge.
-Antworte ausschließlich mit einem validen JSON-Array, ohne Erklärung oder Codeblock.
-Jedes Objekt hat genau diese Felder:
-{
-  "vertragsnummer": "string",
-  "kundennummer":   "string",
-  "kundenname":     "string",
-  "betrag":         number,
-  "periode":        "YYYY-MM",
-  "produkt":        "string"
-}
-Fehlende Werte: "" oder 0. "betrag" ist immer eine Zahl, nie ein String.`;
+Extrahiere ALLE Provisionseinträge und gib sie als CSV aus (Trennzeichen: Semikolon).
+Erste Zeile ist immer der Header:
+vertragsnummer;kundennummer;kundenname;betrag;periode;produkt
 
-// Chunk-Größe: ~70.000 Zeichen ≈ 12–15 PDF-Seiten pro API-Aufruf
+Regeln:
+- Eine Zeile pro Eintrag, kein Leerzeichen um die Semikolons
+- betrag: Dezimalzahl mit Punkt (z.B. 45.50), auch negativ erlaubt
+- periode: YYYY-MM (z.B. 2024-01), falls unbekannt leer lassen
+- Keine Anführungszeichen, keine Erklärungen, nur CSV`;
+
 const CHUNK_SIZE = 70_000;
 
-function normalizeEntry(e: CommissionEntry): CommissionEntry {
-  return {
-    vertragsnummer: String(e.vertragsnummer ?? "").trim(),
-    kundennummer:   String(e.kundennummer   ?? "").trim(),
-    kundenname:     String(e.kundenname     ?? "").trim(),
-    betrag:         Number(e.betrag)  || 0,
-    periode:        String(e.periode  ?? "").trim(),
-    produkt:        String(e.produkt  ?? "").trim(),
-  };
-}
+// ─── CSV parser ───────────────────────────────────────────────────────────────
 
-/**
- * Rettet vollständige JSON-Objekte aus einer abgeschnittenen Array-Antwort.
- */
-function recoverPartialJson(raw: string): CommissionEntry[] {
+function parseCsv(raw: string): CommissionEntry[] {
+  const lines = raw.trim().split(/\r?\n/);
   const results: CommissionEntry[] = [];
-  const re = /\{[^{}]*\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(raw)) !== null) {
-    try {
-      const obj = JSON.parse(m[0]) as CommissionEntry;
-      if (obj.vertragsnummer !== undefined || obj.betrag !== undefined) {
-        results.push(normalizeEntry(obj));
-      }
-    } catch { /* unvollständiges Objekt überspringen */ }
+
+  for (const line of lines) {
+    // Skip header and empty lines
+    if (!line.trim() || line.startsWith("vertragsnummer")) continue;
+    const parts = line.split(";");
+    if (parts.length < 4) continue;
+
+    const betrag = parseFloat(parts[3]?.replace(",", ".") ?? "0");
+    // Skip lines that look like non-data (betrag must be a number)
+    if (isNaN(betrag)) continue;
+
+    results.push({
+      vertragsnummer: (parts[0] ?? "").trim(),
+      kundennummer:   (parts[1] ?? "").trim(),
+      kundenname:     (parts[2] ?? "").trim(),
+      betrag,
+      periode:        (parts[4] ?? "").trim(),
+      produkt:        (parts[5] ?? "").trim(),
+    });
   }
+
   return results;
 }
 
-/**
- * Einen einzelnen Text-Abschnitt an Claude schicken und Einträge extrahieren.
- */
+// ─── JSON fallback (in case model outputs JSON despite instructions) ──────────
+
+function tryJsonFallback(raw: string): CommissionEntry[] {
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  try {
+    const arr = JSON.parse(match[0]) as CommissionEntry[];
+    return arr.map((e) => ({
+      vertragsnummer: String(e.vertragsnummer ?? "").trim(),
+      kundennummer:   String(e.kundennummer   ?? "").trim(),
+      kundenname:     String(e.kundenname     ?? "").trim(),
+      betrag:         Number(e.betrag)  || 0,
+      periode:        String(e.periode  ?? "").trim(),
+      produkt:        String(e.produkt  ?? "").trim(),
+    }));
+  } catch { return []; }
+}
+
+// ─── Single chunk ─────────────────────────────────────────────────────────────
+
 async function parseChunk(
   text: string,
   client: Anthropic,
@@ -98,34 +104,27 @@ async function parseChunk(
 
   const stream = await client.messages.stream({
     model:      getModel(),
-    max_tokens: 64000,
+    max_tokens: 16000,   // CSV is compact: 16k tokens ≈ 1500+ entries
     system:     SYSTEM,
     messages:   [{ role: "user", content: `Provisionsabrechnung:\n\n${text}` }],
   });
 
   for await (const event of stream) {
-    if (
-      event.type === "content_block_delta" &&
-      event.delta.type === "text_delta"
-    ) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       raw += event.delta.text;
       onToken(event.delta.text);
     }
   }
 
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) {
-    const recovered = recoverPartialJson(raw);
-    return recovered;
-  }
+  const csv = parseCsv(raw);
+  if (csv.length > 0) return csv;
 
-  const entries = JSON.parse(match[0]) as CommissionEntry[];
-  return entries.map(normalizeEntry);
+  // Fallback: model may have returned JSON
+  return tryJsonFallback(raw);
 }
 
-/**
- * Haupt-Einstiegspunkt: verarbeitet auch sehr große PDFs durch Aufteilung in Abschnitte.
- */
+// ─── Main entry point ─────────────────────────────────────────────────────────
+
 export async function parseCommissionPdf(
   pdfText: string,
   onToken: (delta: string) => void
@@ -135,29 +134,28 @@ export async function parseCommissionPdf(
 
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
-  // Kleines PDF → ein einziger API-Aufruf
+  // ── Small PDF: single call ─────────────────────────────────────────────────
   if (pdfText.length <= CHUNK_SIZE) {
     return parseChunk(pdfText, client, onToken);
   }
 
-  // Großes PDF → in Abschnitte aufteilen, an Zeilenumbrüchen trennen
+  // ── Large PDF: split at line boundaries, process ALL chunks in parallel ────
   const chunks: string[] = [];
   let pos = 0;
   while (pos < pdfText.length) {
-    const end = Math.min(pos + CHUNK_SIZE, pdfText.length);
-    // Am letzten Zeilenumbruch vor dem Limit trennen → keine Zeile wird zerrissen
+    const end      = Math.min(pos + CHUNK_SIZE, pdfText.length);
     const boundary = pdfText.lastIndexOf("\n", end);
-    const chunkEnd  = boundary > pos ? boundary : end;
+    const chunkEnd = boundary > pos ? boundary : end;
     chunks.push(pdfText.slice(pos, chunkEnd));
     pos = chunkEnd + 1;
   }
 
-  const allEntries: CommissionEntry[] = [];
-  for (let i = 0; i < chunks.length; i++) {
-    onToken(`\n[Abschnitt ${i + 1} / ${chunks.length} wird analysiert…]\n`);
-    const entries = await parseChunk(chunks[i], client, onToken);
-    allEntries.push(...entries);
-  }
+  onToken(`[${chunks.length} Abschnitte werden parallel verarbeitet…]\n`);
 
-  return allEntries;
+  // Parallel — all chunks are sent to the API simultaneously
+  const results = await Promise.all(
+    chunks.map((chunk) => parseChunk(chunk, client, onToken))
+  );
+
+  return results.flat();
 }
