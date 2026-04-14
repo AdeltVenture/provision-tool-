@@ -16,7 +16,15 @@ export const DEFAULT_MODEL   = "claude-haiku-4-5-20251001"; // fastest for struc
 
 export function getApiKey(): string  { return localStorage.getItem(API_KEY_STORAGE) ?? ""; }
 export function saveApiKey(k: string){ localStorage.setItem(API_KEY_STORAGE, k.trim()); }
-export function getModel(): string   { return localStorage.getItem(MODEL_STORAGE) ?? DEFAULT_MODEL; }
+export function getModel(): string {
+  const stored = localStorage.getItem(MODEL_STORAGE);
+  // If nothing stored yet, or still on old Sonnet default → use Haiku
+  if (!stored || stored === "claude-sonnet-4-6") {
+    localStorage.setItem(MODEL_STORAGE, DEFAULT_MODEL);
+    return DEFAULT_MODEL;
+  }
+  return stored;
+}
 export function saveModel(m: string) { localStorage.setItem(MODEL_STORAGE, m); }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
